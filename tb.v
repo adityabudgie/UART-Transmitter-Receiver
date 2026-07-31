@@ -1,134 +1,130 @@
-
-
-// 
-// Module: tb
-// 
-// Notes:
-// - Top level simulation testbench.
-//
-
-`timescale 1ns/1ns
+`timescale 1ns/1ps
 
 module tb;
-    
-reg  clk        ;   // Top level system clock input.
-reg  resetn     ;
-wire [3:0] sw   ;   // Slide switches.
-wire [2:0] rgb0 ;   // RGB Led 0.
-wire [2:0] rgb1 ;   // RGB Led 1.
-wire [2:0] rgb2 ;   // RGB Led 2.
-wire [2:0] rgb3 ;   // RGB Led 3.
-wire [3:0] led  ;   // Green Leds
-reg  uart_rxd   ;   // UART Recieve pin.
 
-//
-// Bit rate of the UART line we are testing.
-localparam BIT_RATE = 11520;
-localparam BIT_P    = (1000000000/BIT_RATE);
+    localparam integer CLK_HZ        = 10_000_000;
+    localparam integer BIT_RATE      = 1_000_000;
+    localparam integer CLK_PERIOD_NS = 1_000_000_000 / CLK_HZ;
+    localparam integer BIT_PERIOD_NS = 1_000_000_000 / BIT_RATE;
 
-//
-// Period and frequency of the system clock.
-localparam CLK_HZ   = 50000000;
-localparam CLK_P    = 1000000000/ CLK_HZ;
+    reg        clk;
+    reg        resetn;
+    reg        uart_rxd;
+    wire       uart_txd;
+    wire [7:0] led;
 
-assign sw    = {2'b0, 1'b1, resetn};
+    integer tests;
+    integer errors;
 
+    always #(CLK_PERIOD_NS / 2) clk = ~clk;
 
-//
-// Make the clock tick.
-always begin #(CLK_P/2) assign clk    = ~clk; end
+    task drive_byte;
+        input [7:0] value;
+        integer i;
+        begin
+            @(negedge clk);
+            uart_rxd = 1'b0;
+            #BIT_PERIOD_NS;
 
+            for (i = 0; i < 8; i = i + 1) begin
+                uart_rxd = value[i];
+                #BIT_PERIOD_NS;
+            end
 
-//
-// Sends a single byte down the UART line.
-task send_byte;
-    input [7:0] to_send;
-    integer i;
-    begin
-        $display("Sending byte: %d, %b at time %d", to_send,to_send, $time);
-
-        #BIT_P;  uart_rxd = 1'b0;
-        for(i=0; i < 8; i = i+1) begin
-            #BIT_P;  uart_rxd = to_send[i];
-
-            //$display("    Bit: %d at time %d", i, $time);
+            uart_rxd = 1'b1;
+            #BIT_PERIOD_NS;
         end
-        #BIT_P;  uart_rxd = 1'b1;
-        #1000;
+    endtask
+
+    task receive_echo;
+        input [7:0] expected;
+        reg   [7:0] received;
+        integer i;
+        begin
+            @(negedge uart_txd);
+            #(BIT_PERIOD_NS / 2);
+
+            if (uart_txd !== 1'b0) begin
+                errors = errors + 1;
+                $display("TOP FAIL: invalid echo start bit");
+            end
+
+            for (i = 0; i < 8; i = i + 1) begin
+                #BIT_PERIOD_NS;
+                received[i] = uart_txd;
+            end
+
+            #BIT_PERIOD_NS;
+            if (uart_txd !== 1'b1) begin
+                errors = errors + 1;
+                $display("TOP FAIL: invalid echo stop bit");
+            end
+
+            tests = tests + 1;
+            if (received !== expected) begin
+                errors = errors + 1;
+                $display("TOP FAIL: expected 0x%02h, got 0x%02h", expected, received);
+            end else begin
+                $display("TOP PASS: 0x%02h received and echoed", expected);
+            end
+        end
+    endtask
+
+    task run_case;
+        input [7:0] value;
+        begin
+            fork
+                drive_byte(value);
+                receive_echo(value);
+            join
+
+            if (led !== value) begin
+                errors = errors + 1;
+                $display("TOP FAIL: LED expected 0x%02h, got 0x%02h", value, led);
+            end
+
+            #(BIT_PERIOD_NS / 2);
+        end
+    endtask
+
+    initial begin
+        clk      = 1'b0;
+        resetn   = 1'b0;
+        uart_rxd = 1'b1;
+        tests    = 0;
+        errors   = 0;
+
+        $dumpfile("waves-top.vcd");
+        $dumpvars(0, tb);
+
+        repeat (3) @(posedge clk);
+        @(negedge clk);
+        resetn = 1'b1;
+
+        run_case(8'h41);
+        run_case(8'h5A);
+        run_case(8'hC3);
+
+        if (errors == 0) begin
+            $display("TOP TEST PASSED (%0d bytes)", tests);
+        end else begin
+            $display("TOP TEST FAILED (%0d errors)", errors);
+            $fatal(1, "Top-level test failed");
+        end
+
+        $finish;
     end
-endtask
 
-//
-// Writes a register via the UART
-task write_register;
-    input [7:0] register;
-    input [7:0] value   ;
-    begin
-        $display("Write register %d with %h", register, value);
-        send_byte(register);
-        send_byte(value);
-    end
-endtask
-
-//
-// Reads a register via the UART
-task read_register;
-    input [7:0] register;
-    begin
-        $display("Read register: %d", register);
-        send_byte(register);
-    end
-endtask
-
-
-reg [7:0] bytes;
-reg [7:0] p_bytes;
-
-initial begin
-    resetn  = 1'b0;
-    clk     = 1'b0;
-    uart_rxd = 1'b1;
-    #40 resetn = 1'b1;
-    
-    $dumpfile("./work/waves-sys.vcd");     
-    $dumpvars(0,tb);
-    
-    send_byte("A");
-    send_byte("1");
-    
-    send_byte("B");
-    send_byte("2");
-    
-    send_byte("C");
-    send_byte("3");
-    
-    send_byte("D");
-    send_byte("4");
-    
-    send_byte(0);
-
-    send_byte("a");
-    send_byte("b");
-    send_byte("c");
-    send_byte("d");
-    
-    send_byte(0);
-    send_byte(0);
-
-    $display("Finish simulation at time %d", $time);
-    $finish();
-end
-
-//
-// Instance the top level implementation module.
-impl_top #(
-.BIT_RATE(BIT_RATE),
-.CLK_HZ  (CLK_HZ  )
-) i_dut (
-.clk      (clk     ),   // Top level system clock input.
-.sw_0     (sw      ),   // Slide switches.
-.led      (led     ),   // Green Leds
-.uart_rxd (uart_rxd)    // UART Recieve pin.
-);
+    impl_top #(
+        .BIT_RATE(BIT_RATE),
+        .CLK_HZ  (CLK_HZ)
+    ) dut (
+        .clk     (clk),
+        .sw_0    (resetn),
+        .sw_1    (1'b0),
+        .uart_rxd(uart_rxd),
+        .uart_txd(uart_txd),
+        .led     (led)
+    );
 
 endmodule
