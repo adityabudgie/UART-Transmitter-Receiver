@@ -172,20 +172,6 @@ vvp sim_top
 
 Each testbench prints pass/fail results and creates a VCD waveform file that can be opened in GTKWave. The testbenches use faster clock and baud settings to reduce simulation time; the same RTL defaults to 50 MHz and 9600 baud.
 
-## What to explain in an interview
-
-A short explanation can be:
-
-> I implemented a basic 8-N-1 UART in Verilog. The transmitter latches a parallel byte and uses an FSM plus a baud counter to send a start bit, eight data bits LSB-first, and a stop bit. The receiver synchronizes the asynchronous input, confirms the start bit near its center, samples each data bit once per baud period, and raises a valid pulse after a correct stop bit. I verified the transmitter, receiver, and echo top level with self-checking testbenches.
-
-Important follow-up points:
-
-- UART is asynchronous because no clock is sent with the data.
-- Both devices must use close baud rates.
-- The start bit changes the line from idle high to low.
-- LSB-first shifting performs the serial conversion.
-- Sampling near the bit center gives timing margin on both sides.
-- A two-flip-flop synchronizer reduces metastability risk, but it does not replace oversampling.
 
 ## Current scope and limitations
 
