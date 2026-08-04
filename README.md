@@ -2,7 +2,6 @@
 
 A basic UART transmitter and receiver written in Verilog HDL. The project demonstrates asynchronous serial communication using baud-rate timing, finite state machines, parallel-to-serial conversion in the transmitter, and serial-to-parallel conversion in the receiver.
 
-The design is intentionally small and interview-friendly. It implements the core UART ideas without adding a FIFO, parity generator, flow control, or a complex oversampling circuit.
 
 ## Default UART format
 
